@@ -1,0 +1,7 @@
+﻿AI Acceptance (Survival) Metrics Summary
+SinceDays: 30
+Branch: HEAD
+Total lines added: 503
+Total survived in HEAD: 501
+Overall survival rate: 0.996
+Immediate rework rate: N/A

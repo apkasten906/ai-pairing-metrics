@@ -1,0 +1,71 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "AI Acceptance: Generate metrics",
+      "type": "shell",
+      "command": "powershell.exe",
+      "args": [
+        "-ExecutionPolicy",
+        "Bypass",
+        "-NoProfile",
+        "-File",
+        "${workspaceFolder}/scripts/ai_acceptance_metrics.ps1",
+        "-RepoPath",
+        "${input:repoPath}",
+        "-Output",
+        "${input:outputFile}"
+      ],
+      "problemMatcher": [],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      }
+    },
+    {
+      "label": "AI Acceptance: Build dashboard",
+      "type": "shell",
+      "command": "python ${workspaceFolder}/build_ai_acceptance_dashboard.py --out ${input:dashboardOut} ${input:dashboardDatasets}",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      }
+    }
+  ],
+  "inputs": [
+    {
+      "id": "repoPath",
+      "type": "promptString",
+      "description": "Absolute path to the Git repo you want to analyze",
+      "default": "${workspaceFolder}"
+    },
+    {
+      "id": "outputFile",
+      "type": "promptString",
+      "description": "Destination CSV filename (saved relative to the workspace)",
+      "default": "outputs/ai_acceptance_metrics.csv"
+    },
+    {
+      "id": "dashboardOut",
+      "type": "promptString",
+      "description": "Dashboard HTML output path",
+      "default": "ai_acceptance_dashboard.html"
+    },
+    {
+      "id": "dashboardDatasets",
+      "type": "promptString",
+      "description": "Extra arguments for --dataset (e.g. --dataset \"Repo=outputs/repo.csv\" ...)",
+      "default": ""
+    }
+  ]
+}

@@ -1,13 +1,23 @@
 
 param(
   [int]$SinceDays = 30,
+  [switch]$AllHistory,
   [string]$Author = "",
   [string]$Branch = "HEAD",
   [string]$Output = "ai_acceptance_metrics.csv",
   [switch]$IgnoreComments,
   [int]$MinLineLength = 3,
-  [int]$ImmediateWindowMinutes = 90
+  [int]$ImmediateWindowMinutes = 90,
+  [string]$RepoPath = "."
 )
+
+$resolvedRepoPath = Resolve-Path -Path $RepoPath -ErrorAction Stop
+$repoItem = Get-Item -LiteralPath $resolvedRepoPath.Path -ErrorAction Stop
+if (-not $repoItem.PSIsContainer) {
+  throw "RepoPath must be a directory. Provided: $RepoPath"
+}
+$script:RepoRoot = $repoItem.FullName
+Write-Host "[ai_acceptance_metrics] Using repo path: $script:RepoRoot"
 
 function Exec-Git {
   param([string]$GitArgs, [switch]$IgnoreErrors)
@@ -17,6 +27,7 @@ function Exec-Git {
   $psi.RedirectStandardOutput = $true
   $psi.RedirectStandardError = $true
   $psi.UseShellExecute = $false
+  $psi.WorkingDirectory = $script:RepoRoot
   Write-Host "[Exec-Git] running: git $GitArgs"
   $p = New-Object System.Diagnostics.Process
   $p.StartInfo = $psi
@@ -31,7 +42,7 @@ function Exec-Git {
   $stderr = $p.StandardError.ReadToEnd()
   $p.WaitForExit()
   if (!$IgnoreErrors -and $p.ExitCode -ne 0) {
-    $cwd = (Get-Location).Path
+    $cwd = $script:RepoRoot
     $msg = @()
     $msg += "git $GitArgs failed (exit $($p.ExitCode))"
     $msg += "WorkingDirectory: $cwd"
@@ -43,12 +54,16 @@ function Exec-Git {
 }
 
 function Get-Commits {
-  param([int]$SinceDays, [string]$Author)
-  $since = (Get-Date).AddDays(-$SinceDays).ToUniversalTime()
-  $sinceUnix = [int][double]::Parse((Get-Date $since -UFormat %s))
+  param([int]$SinceDays, [switch]$AllHistory, [string]$Author)
+  $sinceFilter = ""
+  if (-not $AllHistory) {
+    $since = (Get-Date).AddDays(-$SinceDays).ToUniversalTime()
+    $sinceUnix = [int][double]::Parse((Get-Date $since -UFormat %s))
+    $sinceFilter = " --since=$sinceUnix"
+  }
   $authorFilter = ""
   if ($Author -ne "") { $authorFilter = " --author=`"$Author`"" }
-  $gitArgs = "log --no-merges --pretty=format:`"%H|%ct|%an|%s`" --since=$sinceUnix$authorFilter"
+  $gitArgs = "log --no-merges --pretty=format:`"%H|%ct|%an|%s`"$sinceFilter$authorFilter"
   $out = Exec-Git $gitArgs
   $lines = $out -split "`n" | Where-Object { $_.Trim() -ne "" }
   foreach ($l in $lines) {
@@ -133,8 +148,8 @@ function Get-NextCommitAffectingFileWithinWindow {
 }
 
 function Measure-Acceptance {
-  param([int]$SinceDays, [string]$Author, [string]$Branch, [switch]$IgnoreComments, [int]$MinLineLength, [int]$ImmediateWindowMinutes)
-  $commits = Get-Commits -SinceDays $SinceDays -Author $Author
+  param([int]$SinceDays, [switch]$AllHistory, [string]$Author, [string]$Branch, [switch]$IgnoreComments, [int]$MinLineLength, [int]$ImmediateWindowMinutes)
+  $commits = Get-Commits -SinceDays $SinceDays -AllHistory:$AllHistory -Author $Author
   $rows = @()
   $fileCache = @{}
   foreach ($c in $commits) {
@@ -223,7 +238,7 @@ function Measure-Acceptance {
 }
 
 # Compute and write CSV
-$rows = Measure-Acceptance -SinceDays $SinceDays -Author $Author -Branch $Branch -IgnoreComments:$IgnoreComments -MinLineLength $MinLineLength -ImmediateWindowMinutes $ImmediateWindowMinutes
+$rows = Measure-Acceptance -SinceDays $SinceDays -AllHistory:$AllHistory -Author $Author -Branch $Branch -IgnoreComments:$IgnoreComments -MinLineLength $MinLineLength -ImmediateWindowMinutes $ImmediateWindowMinutes
 
 # Add a summary line
 $totalAdded = ($rows | Measure-Object -Property LinesAdded -Sum).Sum
@@ -245,7 +260,7 @@ $rows | Export-Csv -NoTypeInformation -Encoding UTF8 $Output
 # Write a separate SUMMARY text file
 $summary = @()
 $summary += "AI Acceptance (Survival) Metrics Summary"
-$summary += "SinceDays: $SinceDays"
+$summary += "SinceDays: $(if ($AllHistory) { 'ALL' } else { $SinceDays })"
 if ($Author -ne "") { $summary += "Author filter: $Author" }
 $summary += "Branch: $Branch"
 $summary += "Total lines added: $totalAdded"
